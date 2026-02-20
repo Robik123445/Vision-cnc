@@ -1,0 +1,20 @@
+{
+  "detector": {
+    "type": "yolo",
+    "fallback_enabled": true
+  },
+  "yolo": {
+    "model_path": "models/workpiece-seg.pt",
+    "imgsz": 640,
+    "min_conf_by_class": {
+      "workpiece": 0.55,
+      "clamp": 0.45,
+      "hand": 0.60,
+      "tool": 0.50
+    }
+  },
+  "dataset": {
+    "to_label_dir": "dataset/to_label",
+    "cooldown_seconds": 5
+  }
+}
