@@ -7,11 +7,12 @@ import logging
 import os
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Dict, Optional, Tuple
-
-import numpy as np
+from typing import TYPE_CHECKING, Any, Dict, Optional, Tuple
 
 from vision.dataset.hard_cases import HardCaseLogger
+
+if TYPE_CHECKING:
+    import numpy as np
 
 
 LOGGER = logging.getLogger("vision.detect")
@@ -32,10 +33,10 @@ if not LOGGER.handlers:
 class DetectionResult:
     """Contract output for all segmentation detectors."""
 
-    workpiece_mask: Optional[np.ndarray]
-    clamp_mask: Optional[np.ndarray]
-    hand_mask: Optional[np.ndarray]
-    tool_mask: Optional[np.ndarray]
+    workpiece_mask: Optional[Any]
+    clamp_mask: Optional[Any]
+    hand_mask: Optional[Any]
+    tool_mask: Optional[Any]
     confidences: Dict[str, float]
     source: str
     inference_ms: float
@@ -47,7 +48,7 @@ class Detector(ABC):
     """Abstract detector interface shared by YOLO and fallback implementations."""
 
     @abstractmethod
-    def detect(self, frame: np.ndarray) -> DetectionResult:
+    def detect(self, frame: Any) -> DetectionResult:
         """Run segmentation and always return a valid DetectionResult."""
 
 
@@ -73,7 +74,7 @@ class HybridDetector(Detector):
             cooldown_seconds=int(ds_cfg.get("cooldown_seconds", 5)),
         )
 
-    def _save_hard_case(self, frame: np.ndarray, reason: str, result: DetectionResult) -> None:
+    def _save_hard_case(self, frame: Any, reason: str, result: DetectionResult) -> None:
         """Persist tracked hard-case reasons with compact metadata."""
 
         self._hard_cases.save(
@@ -87,7 +88,7 @@ class HybridDetector(Detector):
             },
         )
 
-    def detect(self, frame: np.ndarray) -> DetectionResult:
+    def detect(self, frame: Any) -> DetectionResult:
         """Run YOLO and optionally switch to fallback under guarded conditions."""
 
         yolo_result = self._yolo.detect(frame)

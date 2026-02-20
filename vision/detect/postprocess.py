@@ -3,14 +3,14 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from typing import Dict, Iterable, List, Optional, Tuple
-
-import cv2
-import numpy as np
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 
-def ensure_binary_mask(mask: np.ndarray, image_size: Tuple[int, int]) -> np.ndarray:
+def ensure_binary_mask(mask: Any, image_size: Tuple[int, int]) -> Any:
     """Resize and convert any input mask into strict binary mask {0,1}."""
+
+    import cv2  # type: ignore
+    import numpy as np  # type: ignore
 
     h, w = image_size
     if mask.shape[:2] != (h, w):
@@ -18,8 +18,10 @@ def ensure_binary_mask(mask: np.ndarray, image_size: Tuple[int, int]) -> np.ndar
     return (mask > 0.5).astype(np.uint8)
 
 
-def _union_masks(masks: Iterable[np.ndarray], image_size: Tuple[int, int]) -> Optional[np.ndarray]:
+def _union_masks(masks: Iterable[Any], image_size: Tuple[int, int]) -> Optional[Any]:
     """Create union of masks for one class while preserving original frame size."""
+
+    import numpy as np  # type: ignore
 
     union = None
     for mask in masks:
@@ -31,7 +33,7 @@ def _union_masks(masks: Iterable[np.ndarray], image_size: Tuple[int, int]) -> Op
 
 
 def process_yolo_masks(
-    masks: List[np.ndarray],
+    masks: List[Any],
     class_ids: List[int],
     confidences: List[float],
     class_map: Dict[int, str],
@@ -40,7 +42,9 @@ def process_yolo_masks(
 ) -> tuple[dict, Dict[str, float]]:
     """Apply confidence gating and class-specific aggregation rules."""
 
-    grouped_masks: Dict[str, List[np.ndarray]] = defaultdict(list)
+    import numpy as np  # type: ignore
+
+    grouped_masks: Dict[str, List[Any]] = defaultdict(list)
     grouped_conf: Dict[str, List[float]] = defaultdict(list)
 
     for mask, class_id, conf in zip(masks, class_ids, confidences):

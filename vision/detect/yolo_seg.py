@@ -5,10 +5,7 @@ from __future__ import annotations
 import logging
 import time
 from pathlib import Path
-from typing import Dict, Optional
-
-import numpy as np
-import yaml
+from typing import Any, Dict, Optional
 
 from vision.detect.detector_api import DetectionResult, Detector
 from vision.detect.postprocess import process_yolo_masks
@@ -36,12 +33,19 @@ class YoloSegmenter(Detector):
         if not class_path.exists():
             return default_map
 
+        parsed: Dict[int, str] = {}
         try:
-            payload = yaml.safe_load(class_path.read_text(encoding="utf-8")) or {}
-            raw = payload.get("classes", {})
-            parsed = {int(k): str(v) for k, v in raw.items()}
+            for line in class_path.read_text(encoding="utf-8").splitlines():
+                text = line.strip()
+                if not text or text.startswith("classes"):
+                    continue
+                if ":" not in text:
+                    continue
+                key, value = [item.strip() for item in text.split(":", 1)]
+                if key.isdigit():
+                    parsed[int(key)] = value
             return parsed or default_map
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             LOGGER.warning("Failed to parse classes.yaml, using defaults: %s", exc)
             return default_map
 
@@ -56,16 +60,16 @@ class YoloSegmenter(Detector):
                 self._model_error = "model_not_loaded"
                 return
             self._model = YOLO(model_path)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             LOGGER.warning("Failed to initialize YOLO model: %s", exc)
             self._model_error = "model_not_loaded"
             self._model = None
 
-    def detect(self, frame: np.ndarray) -> DetectionResult:
+    def detect(self, frame: Any) -> DetectionResult:
         """Run YOLO inference and always return a valid contract-compatible result."""
 
         start = time.perf_counter()
-        h, w = frame.shape[:2]
+        h, w = frame.shape[:2] if hasattr(frame, "shape") and len(frame.shape) >= 2 else (0, 0)
         empty_conf = {"workpiece": 0.0, "clamp": 0.0, "hand": 0.0, "tool": 0.0}
 
         if self._model is None:
@@ -123,7 +127,7 @@ class YoloSegmenter(Detector):
                 image_size=(h, w),
                 fail_reason=fail_reason,
             )
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             LOGGER.warning("YOLO inference failed: %s", exc)
             return DetectionResult(
                 workpiece_mask=None,

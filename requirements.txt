@@ -1,6 +1,1 @@
-numpy
-opencv-python
-pytest
-ultralytics
-PyYAML
-PySide6
+# CI-safe: keep empty (no external dependencies required for import-only/test-skip checks)

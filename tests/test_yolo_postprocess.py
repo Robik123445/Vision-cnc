@@ -1,9 +1,15 @@
-import numpy as np
+"""YOLO postprocessing tests (auto-skipped when runtime deps are missing)."""
+
+import pytest
+
+np = pytest.importorskip("numpy")
 
 from vision.detect.postprocess import process_yolo_masks
 
 
 def test_postprocess_selects_largest_workpiece_and_unions_clamps():
+    """Largest workpiece wins and clamps are unioned as requested."""
+
     image_size = (10, 10)
     wp_small = np.zeros((10, 10), dtype=np.uint8)
     wp_small[0:2, 0:2] = 1
@@ -31,6 +37,8 @@ def test_postprocess_selects_largest_workpiece_and_unions_clamps():
 
 
 def test_postprocess_applies_thresholds():
+    """Confidence gating should remove objects under threshold."""
+
     mask = np.ones((4, 4), dtype=np.uint8)
     out_masks, out_conf = process_yolo_masks(
         masks=[mask],

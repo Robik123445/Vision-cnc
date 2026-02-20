@@ -6,10 +6,7 @@ import json
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, Optional
-
-import cv2
-import numpy as np
+from typing import Any, Dict, Optional
 
 
 HARD_REASONS = {
@@ -41,8 +38,8 @@ class HardCaseLogger:
         self._last_save_by_reason[reason] = now
         return True
 
-    def save(self, frame: np.ndarray, reason: str, meta: Dict) -> Optional[Path]:
-        """Save frame and metadata into date-scoped hard-case folder."""
+    def save(self, frame: Any, reason: str, meta: Dict[str, Any]) -> Optional[Path]:
+        """Save metadata always; save frame image when OpenCV is available."""
 
         if not self.should_save(reason):
             return None
@@ -55,7 +52,14 @@ class HardCaseLogger:
         image_path = case_dir / "frame.png"
         meta_path = case_dir / "meta.json"
 
-        cv2.imwrite(str(image_path), frame)
-        payload = {"reason": reason, "timestamp": ts, **meta}
+        image_saved = False
+        try:
+            import cv2  # type: ignore
+
+            image_saved = bool(cv2.imwrite(str(image_path), frame))
+        except Exception:
+            image_saved = False
+
+        payload = {"reason": reason, "timestamp": ts, "image_saved": image_saved, **meta}
         meta_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
         return case_dir

@@ -50,3 +50,10 @@ python scripts/vision_detect_smoketest.py --image sample.jpg
 python scripts/vision_detect_smoketest.py --camera 0
 ```
 Výstupy sú v `runs/<timestamp>/` (`input.png`, `preview.png`, `summary.json`).
+
+## Lokálna inštalácia runtime závislostí
+CI je navrhnuté bez internetu a bez heavy balíkov. Pre lokálne spustenie YOLO/UI použi:
+```bash
+pip install -r requirements-runtime.txt
+```
+`requirements.txt` ostáva CI-safe a neobsahuje runtime-heavy knižnice.

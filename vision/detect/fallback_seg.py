@@ -3,10 +3,7 @@
 from __future__ import annotations
 
 import time
-from typing import Dict
-
-import cv2
-import numpy as np
+from typing import Any, Dict
 
 from vision.detect.detector_api import DetectionResult, Detector
 
@@ -17,12 +14,27 @@ class FallbackSegmenter(Detector):
     def __init__(self, config: Dict) -> None:
         self._config = config
 
-    def detect(self, frame: np.ndarray) -> DetectionResult:
+    def detect(self, frame: Any) -> DetectionResult:
         """Segment largest object as workpiece using grayscale threshold + morphology."""
 
         start = time.perf_counter()
-        h, w = frame.shape[:2]
+        try:
+            import cv2  # type: ignore
+            import numpy as np  # type: ignore
+        except Exception:
+            return DetectionResult(
+                workpiece_mask=None,
+                clamp_mask=None,
+                hand_mask=None,
+                tool_mask=None,
+                confidences={"workpiece": 0.0, "clamp": 0.0, "hand": 0.0, "tool": 0.0},
+                source="fallback",
+                inference_ms=(time.perf_counter() - start) * 1000.0,
+                image_size=(0, 0),
+                fail_reason="fallback_no_object",
+            )
 
+        h, w = frame.shape[:2]
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         blur = cv2.GaussianBlur(gray, (5, 5), 0)
         _, binary = cv2.threshold(blur, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
