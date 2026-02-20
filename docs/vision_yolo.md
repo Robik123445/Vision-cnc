@@ -30,6 +30,19 @@ Dôvody exportu:
 - `hand_detected`
 - `low_confidence_workpiece`
 
+## PySide6 UI (operator console)
+Spustenie:
+```bash
+python scripts/vision_ui.py
+```
+
+UI obsahuje:
+- live preview s overlay masiek,
+- ovládanie kamery (open/stop/index),
+- load image a one-shot detect,
+- status panel (source/fail/confidence/inference),
+- snapshot export do `runs/ui/<timestamp>/`.
+
 ## Smoketest
 ```bash
 python scripts/vision_detect_smoketest.py --image sample.jpg
