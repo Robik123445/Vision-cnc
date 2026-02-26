@@ -8,7 +8,8 @@ from typing import Dict
 import cv2
 import numpy as np
 
-from vision.detect.detector_api import DetectionResult, Detector
+from vision.detect.detector_api import Detector
+from vision.detect.result import DetectionResult
 
 
 class FallbackSegmenter(Detector):
@@ -33,7 +34,7 @@ class FallbackSegmenter(Detector):
 
         num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(binary)
         workpiece_mask = None
-        fail_reason = None
+        fail_reason = ""
 
         if num_labels > 1:
             largest_label = 1 + int(np.argmax(stats[1:, cv2.CC_STAT_AREA]))
@@ -45,13 +46,16 @@ class FallbackSegmenter(Detector):
             fail_reason = "fallback_no_object"
 
         return DetectionResult(
-            workpiece_mask=workpiece_mask,
-            clamp_mask=None,
-            hand_mask=None,
-            tool_mask=None,
-            confidences={"workpiece": 1.0 if workpiece_mask is not None else 0.0, "clamp": 0.0, "hand": 0.0, "tool": 0.0},
-            source="fallback",
-            inference_ms=(time.perf_counter() - start) * 1000.0,
-            image_size=(h, w),
+            ok=workpiece_mask is not None,
             fail_reason=fail_reason,
+            masks={
+                "workpiece": workpiece_mask,
+                "clamp": None,
+                "hand": None,
+                "tool": None,
+                "safety_mask": None,
+            },
+            confidences={"workpiece": 1.0 if workpiece_mask is not None else 0.0, "clamp": 0.0, "hand": 0.0, "tool": 0.0},
+            timing_ms={"inference": (time.perf_counter() - start) * 1000.0},
+            debug={"source": "fallback", "image_size": [h, w]},
         )

@@ -9,12 +9,26 @@
     "min_conf_by_class": {
       "workpiece": 0.55,
       "clamp": 0.45,
-      "hand": 0.60,
-      "tool": 0.50
+      "hand": 0.6,
+      "tool": 0.5
+    },
+    "min_area_by_class": {
+      "clamp": 25,
+      "hand": 30,
+      "tool": 25
     }
   },
   "dataset": {
     "to_label_dir": "dataset/to_label",
     "cooldown_seconds": 5
+  },
+  "calibration": {
+    "intrinsics_path": "calibration/intrinsics.json",
+    "plane_path": "calibration/plane.json",
+    "workspace_mm": {
+      "width": 800,
+      "height": 500
+    },
+    "origin": "bottom_left"
   }
 }

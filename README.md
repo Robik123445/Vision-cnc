@@ -1,6 +1,6 @@
-# Vision-cnc YOLO Segmentation Subsystem
+# Vision-cnc Engine
 
-Production-oriented segmentation module for CNC Vision with robust YOLO + fallback behavior.
+Production-oriented vision engine for CNC workflows: camera calibration, segmentation, and YOLOv8-seg training.
 
 ## Quick start
 ```bash
@@ -8,14 +8,17 @@ python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 pytest
-python scripts/vision_detect_smoketest.py --image path/to/image.jpg
 ```
 
-## Main components
-- `vision/detect/detector_api.py`: contract + detector factory.
-- `vision/detect/yolo_seg.py`: YOLOv8-seg wrapper.
-- `vision/detect/fallback_seg.py`: CPU fallback segmentation.
-- `vision/dataset/hard_cases.py`: active-learning hard-case export.
+## Main modules
+- `vision/calib/` — intrinsic + plane calibration runtime API.
+- `vision/detect/` — YOLO-seg + fallback detector with stable `DetectionResult` contract.
+- `vision/dataset/hard_cases.py` — hard-case export (`frame.png`, `overlay.png`, `meta.json`).
+- `scripts/` — calibration, smoketest, capture and training CLI scripts.
+
+## Documentation
+- Calibration guide: `docs/calibration.md`
+- Training guide: `docs/training.md`
 
 ## Logging
 Runtime logs are written to `log.txt`.
