@@ -6,12 +6,12 @@ import json
 import logging
 import os
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
-from typing import Dict, Optional, Tuple
+from typing import Optional
 
 import numpy as np
 
 from vision.dataset.hard_cases import HardCaseLogger
+from vision.detect.result import DetectionResult
 
 
 LOGGER = logging.getLogger("vision.detect")
@@ -21,21 +21,6 @@ if not LOGGER.handlers:
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
         handlers=[logging.FileHandler("log.txt"), logging.StreamHandler()],
     )
-
-
-@dataclass
-class DetectionResult:
-    """Contract output for all segmentation detectors."""
-
-    workpiece_mask: Optional[np.ndarray]
-    clamp_mask: Optional[np.ndarray]
-    hand_mask: Optional[np.ndarray]
-    tool_mask: Optional[np.ndarray]
-    confidences: Dict[str, float]
-    source: str
-    inference_ms: float
-    image_size: Tuple[int, int]
-    fail_reason: Optional[str]
 
 
 class Detector(ABC):
@@ -75,32 +60,33 @@ class HybridDetector(Detector):
         min_conf = self._config.get("yolo", {}).get("min_conf_by_class", {}).get("workpiece", 0.0)
         workpiece_conf = yolo_result.confidences.get("workpiece", 0.0)
 
-        hand_conf = yolo_result.confidences.get("hand", 0.0)
-        if yolo_result.hand_mask is not None and hand_conf > 0:
+        hand_mask = yolo_result.masks.get("hand")
+        hand_area = int(np.count_nonzero(hand_mask)) if hand_mask is not None else 0
+        if hand_area > 0:
+            yolo_result.ok = False
             yolo_result.fail_reason = "hand_detected"
-            self._hard_cases.save(frame, "hand_detected", {"source": yolo_result.source, "confidences": yolo_result.confidences})
+            self._hard_cases.save(frame, "hand_detected", yolo_result.debug, yolo_result.masks)
             return yolo_result
 
         should_fallback = yolo_result.fail_reason in {"model_not_loaded", "no_detections"}
-        should_fallback = should_fallback or (yolo_result.workpiece_mask is None)
+        should_fallback = should_fallback or (yolo_result.masks.get("workpiece") is None)
         should_fallback = should_fallback or (workpiece_conf < min_conf)
 
         if should_fallback and self._fallback is not None:
             fallback_reason = yolo_result.fail_reason or "low_confidence_workpiece"
             LOGGER.info("Switching to fallback segmentation. reason=%s", fallback_reason)
             fallback_result = self._fallback.detect(frame)
-            if yolo_result.fail_reason and fallback_result.fail_reason is None:
-                fallback_result.fail_reason = yolo_result.fail_reason
-            if fallback_reason == "low_confidence_workpiece":
-                self._hard_cases.save(frame, "low_confidence_workpiece", {"source": yolo_result.source, "confidences": yolo_result.confidences})
-            if fallback_result.fail_reason:
-                self._hard_cases.save(frame, fallback_result.fail_reason, {"source": fallback_result.source, "confidences": fallback_result.confidences})
+            if fallback_result.ok and fallback_reason == "low_confidence_workpiece":
+                fallback_result.debug["fallback_trigger"] = fallback_reason
+                self._hard_cases.save(frame, fallback_reason, fallback_result.debug, fallback_result.masks)
+            elif not fallback_result.ok:
+                self._hard_cases.save(frame, fallback_result.fail_reason, fallback_result.debug, fallback_result.masks)
             return fallback_result
 
-        if yolo_result.fail_reason:
-            self._hard_cases.save(frame, yolo_result.fail_reason, {"source": yolo_result.source, "confidences": yolo_result.confidences})
+        if not yolo_result.ok:
+            self._hard_cases.save(frame, yolo_result.fail_reason, yolo_result.debug, yolo_result.masks)
         elif workpiece_conf < min_conf:
-            self._hard_cases.save(frame, "low_confidence_workpiece", {"source": yolo_result.source, "confidences": yolo_result.confidences})
+            self._hard_cases.save(frame, "low_confidence_workpiece", yolo_result.debug, yolo_result.masks)
 
         return yolo_result
 
