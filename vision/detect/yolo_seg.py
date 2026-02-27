@@ -8,8 +8,9 @@ from typing import Dict, Optional
 
 import numpy as np
 
-from vision.detect.detector_api import DetectionResult, Detector
+from vision.detect.detector_api import Detector
 from vision.detect.postprocess import process_yolo_masks
+from vision.detect.result import DetectionResult
 
 
 class YoloSegmenter(Detector):
@@ -20,6 +21,7 @@ class YoloSegmenter(Detector):
         self._model = None
         self._class_map = self._load_class_map()
         self._min_conf = config.get("yolo", {}).get("min_conf_by_class", {})
+        self._min_area = config.get("yolo", {}).get("min_area_by_class", {})
         self._model_error: Optional[str] = None
         self._load_model()
 
@@ -43,6 +45,18 @@ class YoloSegmenter(Detector):
                 result[int(key)] = value
         return result or {0: "workpiece", 1: "clamp", 2: "hand", 3: "tool"}
 
+    def _empty(self, reason: str, h: int, w: int, elapsed_ms: float, source: str = "none") -> DetectionResult:
+        """Build empty contract response for graceful failures."""
+
+        return DetectionResult(
+            ok=False,
+            fail_reason=reason,
+            masks={"workpiece": None, "clamp": None, "hand": None, "tool": None, "safety_mask": None},
+            confidences={"workpiece": 0.0, "clamp": 0.0, "hand": 0.0, "tool": 0.0},
+            timing_ms={"inference": elapsed_ms},
+            debug={"source": source, "image_size": [h, w]},
+        )
+
     def _load_model(self) -> None:
         """Load YOLO model and keep error state instead of raising exceptions."""
 
@@ -65,35 +79,16 @@ class YoloSegmenter(Detector):
         h, w = frame.shape[:2]
 
         if self._model is None:
-            return DetectionResult(
-                workpiece_mask=None,
-                clamp_mask=None,
-                hand_mask=None,
-                tool_mask=None,
-                confidences={"workpiece": 0.0, "clamp": 0.0, "hand": 0.0, "tool": 0.0},
-                source="none",
-                inference_ms=(time.perf_counter() - start) * 1000.0,
-                image_size=(h, w),
-                fail_reason=self._model_error or "model_not_loaded",
-            )
+            return self._empty(self._model_error or "model_not_loaded", h, w, (time.perf_counter() - start) * 1000.0)
 
         try:
             imgsz = int(self._config.get("yolo", {}).get("imgsz", 640))
             results = self._model.predict(source=frame, imgsz=imgsz, device="cpu", verbose=False)
             first = results[0] if results else None
+            elapsed = (time.perf_counter() - start) * 1000.0
 
             if first is None or first.boxes is None or first.masks is None or len(first.boxes) == 0:
-                return DetectionResult(
-                    workpiece_mask=None,
-                    clamp_mask=None,
-                    hand_mask=None,
-                    tool_mask=None,
-                    confidences={"workpiece": 0.0, "clamp": 0.0, "hand": 0.0, "tool": 0.0},
-                    source="yolo",
-                    inference_ms=(time.perf_counter() - start) * 1000.0,
-                    image_size=(h, w),
-                    fail_reason="no_detections",
-                )
+                return self._empty("no_detections", h, w, elapsed, source="yolo")
 
             masks = [m for m in first.masks.data.cpu().numpy()]
             class_ids = [int(c) for c in first.boxes.cls.cpu().numpy().tolist()]
@@ -105,29 +100,23 @@ class YoloSegmenter(Detector):
                 class_map=self._class_map,
                 image_size=(h, w),
                 min_conf_by_class=self._min_conf,
+                min_area_by_class=self._min_area,
             )
 
-            fail_reason = None if any(v is not None for v in out_masks.values()) else "no_detections"
+            ok = out_masks["workpiece"] is not None
             return DetectionResult(
-                workpiece_mask=out_masks["workpiece"],
-                clamp_mask=out_masks["clamp"],
-                hand_mask=out_masks["hand"],
-                tool_mask=out_masks["tool"],
+                ok=ok,
+                fail_reason="" if ok else "no_detections",
+                masks=out_masks,
                 confidences=out_conf,
-                source="yolo",
-                inference_ms=(time.perf_counter() - start) * 1000.0,
-                image_size=(h, w),
-                fail_reason=fail_reason,
+                timing_ms={"inference": elapsed},
+                debug={
+                    "source": "yolo",
+                    "model_name": str(self._config.get("yolo", {}).get("model_path", "")),
+                    "imgsz": imgsz,
+                    "image_size": [h, w],
+                    "raw_class_ids": class_ids,
+                },
             )
         except Exception:
-            return DetectionResult(
-                workpiece_mask=None,
-                clamp_mask=None,
-                hand_mask=None,
-                tool_mask=None,
-                confidences={"workpiece": 0.0, "clamp": 0.0, "hand": 0.0, "tool": 0.0},
-                source="none",
-                inference_ms=(time.perf_counter() - start) * 1000.0,
-                image_size=(h, w),
-                fail_reason="model_not_loaded",
-            )
+            return self._empty("model_not_loaded", h, w, (time.perf_counter() - start) * 1000.0)

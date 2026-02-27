@@ -1,4 +1,9 @@
 numpy
 opencv-python
 pytest
+pyyaml
 ultralytics
+pillow
+fastapi
+uvicorn
+pydantic

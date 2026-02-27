@@ -1,0 +1,28 @@
+{
+  "schema_version": "1.0",
+  "status": "NO_DETECTION",
+  "timestamp": "2026-01-01T00:00:00+00:00",
+  "frame_id": "00000000-0000-0000-0000-000000000000",
+  "material": {
+    "material_polygon_mm": [[0.0, 0.0], [0.0, 0.0], [0.0, 0.0]],
+    "material_bbox_mm": {
+      "min": [0.0, 0.0],
+      "max": [0.0, 0.0]
+    },
+    "material_angle_deg": 0.0,
+    "origin_mm": [0.0, 0.0]
+  },
+  "transforms": {
+    "H_cam_to_machine": [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
+    "px_to_mm_scale": [1.0, 1.0]
+  },
+  "metrics": {
+    "confidence": 0.0,
+    "error_mm_est": 0.0
+  },
+  "debug": {
+    "reason": "",
+    "debug_image_path": null,
+    "raw": {}
+  }
+}
