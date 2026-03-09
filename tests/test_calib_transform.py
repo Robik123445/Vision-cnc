@@ -1,6 +1,6 @@
 import pytest
 
-pytest.importorskip("cv2", reason="OpenCV runtime not available in this environment", exc_type=ImportError)
+pytest.importorskip("cv2", reason="OpenCV runtime not available in this environment")
 
 import numpy as np
 

@@ -8,12 +8,9 @@ import json
 from datetime import datetime
 from pathlib import Path
 
-import cv2
-import numpy as np
-
-from vision.calib.plane import load_plane, mm_to_pixel
 from vision.dataset.hard_cases import HardCaseLogger
 from vision.detect.detector_api import create_detector, load_config
+from vision.ui.image_overlay import compose_overlay
 
 
 def parse_args() -> argparse.Namespace:
@@ -27,45 +24,37 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def draw_overlay(frame: np.ndarray, result) -> np.ndarray:
-    """Overlay binary masks for quick visual validation."""
+def draw_mm_grid(frame, plane_path: str, step_mm: int = 50):
+    """Render a projected mm grid into the preview image."""
 
-    overlay = frame.copy()
-    color_map = {
-        "workpiece": (0, 255, 0),
-        "clamp": (0, 0, 255),
-        "hand": (0, 255, 255),
-        "tool": (255, 0, 0),
-        "safety_mask": (255, 0, 255),
-    }
-    for key, color in color_map.items():
-        mask = result.masks.get(key)
-        if mask is None:
-            continue
-        overlay[mask.astype(bool)] = color
-    return cv2.addWeighted(frame, 0.65, overlay, 0.35, 0)
+    import cv2  # type: ignore
 
-
-def draw_mm_grid(frame: np.ndarray, plane_path: str, step_mm: int = 50) -> np.ndarray:
-    """Render mm grid projected into image for plane-calibration debug."""
+    from vision.calib.plane import load_plane, mm_to_pixel
 
     plane = load_plane(plane_path)
     out = frame.copy()
-    w_mm, h_mm = plane.workspace_mm
+    width_mm, height_mm = plane.workspace_mm
 
-    for x_mm in range(0, int(w_mm) + 1, step_mm):
-        pts = [mm_to_pixel(x_mm, 0.0, plane), mm_to_pixel(x_mm, h_mm, plane)]
-        p1, p2 = (int(pts[0][0]), int(pts[0][1])), (int(pts[1][0]), int(pts[1][1]))
-        cv2.line(out, p1, p2, (255, 255, 0), 1)
-    for y_mm in range(0, int(h_mm) + 1, step_mm):
-        pts = [mm_to_pixel(0.0, y_mm, plane), mm_to_pixel(w_mm, y_mm, plane)]
-        p1, p2 = (int(pts[0][0]), int(pts[0][1])), (int(pts[1][0]), int(pts[1][1]))
-        cv2.line(out, p1, p2, (255, 255, 0), 1)
+    for x_mm in range(0, int(width_mm) + 1, step_mm):
+        start = mm_to_pixel(x_mm, 0.0, plane)
+        end = mm_to_pixel(x_mm, height_mm, plane)
+        cv2.line(out, (int(start[0]), int(start[1])), (int(end[0]), int(end[1])), (255, 255, 0), 1)
+    for y_mm in range(0, int(height_mm) + 1, step_mm):
+        start = mm_to_pixel(0.0, y_mm, plane)
+        end = mm_to_pixel(width_mm, y_mm, plane)
+        cv2.line(out, (int(start[0]), int(start[1])), (int(end[0]), int(end[1])), (255, 255, 0), 1)
     return out
 
 
 def main() -> int:
     """Run one-shot detection, print summary, and save artifacts."""
+
+    try:
+        import cv2  # type: ignore
+    except Exception as exc:
+        raise SystemExit(
+            "OpenCV is not installed. Run `pip install -r requirements-runtime.txt`."
+        ) from exc
 
     args = parse_args()
     config = load_config(args.config)
@@ -80,7 +69,7 @@ def main() -> int:
         cap = cv2.VideoCapture(cam_idx)
         ok, frame = cap.read()
         cap.release()
-        if not ok:
+        if not ok or frame is None:
             raise SystemExit(f"Failed to read frame from camera {cam_idx}")
 
     result = detector.detect(frame)
@@ -88,7 +77,7 @@ def main() -> int:
     out_dir = Path("runs") / stamp
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    preview = draw_overlay(frame, result)
+    preview = compose_overlay(frame, result)
     if args.with_mm_grid:
         plane_path = config.get("calibration", {}).get("plane_path", "calibration/plane.json")
         if Path(plane_path).exists():
@@ -99,9 +88,11 @@ def main() -> int:
 
     summary = {
         "ok": result.ok,
+        "source": result.source,
         "fail_reason": result.fail_reason,
         "confidences": result.confidences,
-        "timing_ms": result.timing_ms,
+        "inference_ms": result.inference_ms,
+        "image_size": result.image_size,
         "debug": result.debug,
     }
     (out_dir / "summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
@@ -111,11 +102,13 @@ def main() -> int:
         to_label_dir=hard_cfg.get("to_label_dir", "dataset/to_label"),
         cooldown_seconds=int(hard_cfg.get("cooldown_seconds", 5)),
     )
-    reason = result.fail_reason or ""
-    if result.confidences.get("workpiece", 0.0) < config.get("yolo", {}).get("min_conf_by_class", {}).get("workpiece", 0.0):
-        reason = "low_confidence_workpiece"
-    saved = hard_logger.save(frame, reason, summary, result.masks) if reason else None
 
+    reason = result.fail_reason
+    min_workpiece_conf = config.get("yolo", {}).get("min_conf_by_class", {}).get("workpiece", 0.0)
+    if result.workpiece_mask is not None and result.confidences.get("workpiece", 0.0) < min_workpiece_conf:
+        reason = "low_confidence_workpiece"
+
+    saved = hard_logger.save(frame, reason, summary) if reason else None
     print(json.dumps({"run_dir": str(out_dir), "hard_case_saved": str(saved) if saved else None, **summary}, indent=2))
     return 0
 

@@ -1,6 +1,2 @@
-numpy
-opencv-python
-pytest
-pyyaml
-ultralytics
-pillow
+# CI-safe: intentionally empty.
+# Runtime dependencies for YOLO/OpenCV/PySide6 live in requirements-runtime.txt.

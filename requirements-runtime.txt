@@ -1,0 +1,6 @@
+# Local runtime dependencies for full vision + UI execution
+numpy
+opencv-python
+ultralytics
+torch
+PySide6

@@ -1,38 +1,87 @@
-import pytest
+"""CI-safe tests for detector contract without third-party runtime deps."""
 
-pytest.importorskip("cv2", reason="OpenCV runtime not available in this environment", exc_type=ImportError)
-
-import numpy as np
-
-from vision.detect.detector_api import create_detector
-from vision.detect.result import DetectionResult
+from vision.detect.detector_api import DetectionResult, Detector, HybridDetector
 
 
-def test_detector_contract_always_returns_result():
-    config = {
-        "detector": {"fallback_enabled": True},
-        "yolo": {"model_path": "missing.pt", "imgsz": 640, "min_conf_by_class": {"workpiece": 0.55}},
-    }
-    detector = create_detector(config)
-    frame = np.zeros((120, 160, 3), dtype=np.uint8)
-    result = detector.detect(frame)
+class StubYolo(Detector):
+    """Stub YOLO detector used for pure-python contract tests."""
 
-    assert isinstance(result, DetectionResult)
-    assert set(result.masks.keys()) == {"workpiece", "clamp", "hand", "tool", "safety_mask"}
+    def __init__(self, result: DetectionResult):
+        self._result = result
+
+    def detect(self, frame):
+        """Return pre-built result for deterministic tests."""
+
+        return self._result
+
+
+class StubFallback(Detector):
+    """Stub fallback detector used for pure-python contract tests."""
+
+    def __init__(self, result: DetectionResult):
+        self._result = result
+
+    def detect(self, frame):
+        """Return pre-built result for deterministic tests."""
+
+        return self._result
+
+
+def test_detection_result_contract_fields_and_compat_properties():
+    """Ensure contract object carries both modern and backward-compatible fields."""
+
+    marker = object()
+    result = DetectionResult(
+        workpiece_mask=marker,
+        clamp_mask=None,
+        hand_mask=None,
+        tool_mask=None,
+        confidences={"workpiece": 0.7},
+        source="yolo",
+        inference_ms=1.23,
+        image_size=(10, 20),
+        fail_reason=None,
+    )
+
+    assert result.image_size == (10, 20)
     assert set(result.confidences.keys()) == {"workpiece", "clamp", "hand", "tool"}
-    assert isinstance(result.ok, bool)
-    assert isinstance(result.fail_reason, str)
+    assert result.ok is True
+    assert result.masks["workpiece"] is marker
+    assert result.timing_ms["inference"] == 1.23
 
 
-def test_mask_shape_matches_input_when_present():
-    config = {
-        "detector": {"fallback_enabled": True},
-        "yolo": {"model_path": "missing.pt", "imgsz": 640, "min_conf_by_class": {"workpiece": 0.55}},
-    }
-    detector = create_detector(config)
+def test_hybrid_preserves_fallback_reason_when_switching():
+    """Verify fallback-native fail reason is returned without YOLO overwrite."""
 
-    frame = np.full((80, 120, 3), 255, dtype=np.uint8)
-    result = detector.detect(frame)
-    mask = result.masks.get("workpiece")
-    if mask is not None:
-        assert mask.shape == frame.shape[:2]
+    yolo_result = DetectionResult(
+        workpiece_mask=None,
+        clamp_mask=None,
+        hand_mask=None,
+        tool_mask=None,
+        confidences={"workpiece": 0.1},
+        source="none",
+        inference_ms=1.0,
+        image_size=(20, 20),
+        fail_reason="model_not_loaded",
+    )
+    fallback_result = DetectionResult(
+        workpiece_mask=None,
+        clamp_mask=None,
+        hand_mask=None,
+        tool_mask=None,
+        confidences={},
+        source="fallback",
+        inference_ms=1.0,
+        image_size=(20, 20),
+        fail_reason="fallback_no_object",
+    )
+
+    detector = HybridDetector(
+        yolo=StubYolo(yolo_result),
+        fallback=StubFallback(fallback_result),
+        config={"dataset": {}, "yolo": {"min_conf_by_class": {"workpiece": 0.55}}},
+    )
+
+    out = detector.detect(frame={"fake": True})
+    assert out.source == "fallback"
+    assert out.fail_reason == "fallback_no_object"

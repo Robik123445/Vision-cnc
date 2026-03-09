@@ -3,82 +3,100 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from typing import Dict, Iterable, List, Optional, Tuple
-
-import cv2
-import numpy as np
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 
-def ensure_binary_mask(mask: np.ndarray, image_size: Tuple[int, int]) -> np.ndarray:
+def ensure_binary_mask(mask: Any, image_size: Tuple[int, int]) -> Any:
     """Resize and convert any input mask into strict binary mask {0,1}."""
 
+    import cv2  # type: ignore
+    import numpy as np  # type: ignore
+
     h, w = image_size
-    if mask.shape[:2] != (h, w):
-        mask = cv2.resize(mask.astype(np.uint8), (w, h), interpolation=cv2.INTER_NEAREST)
-    return (mask > 0).astype(np.uint8)
+    binary = mask.astype(np.float32) if hasattr(mask, "astype") else mask
+    if binary.shape[:2] != (h, w):
+        binary = cv2.resize(binary, (w, h), interpolation=cv2.INTER_NEAREST)
+    return (binary > 0.5).astype(np.uint8)
 
 
-def _union_masks(masks: Iterable[np.ndarray], image_size: Tuple[int, int]) -> Optional[np.ndarray]:
+def _union_masks(masks: Iterable[Any], image_size: Tuple[int, int]) -> Optional[Any]:
     """Create union of masks for one class while preserving original frame size."""
+
+    import numpy as np  # type: ignore
 
     union = None
     for mask in masks:
-        m = ensure_binary_mask(mask, image_size)
-        union = m if union is None else np.logical_or(union, m)
+        binary = ensure_binary_mask(mask, image_size)
+        union = binary if union is None else np.logical_or(union, binary)
+
     if union is None:
         return None
     return union.astype(np.uint8)
 
 
-def _largest_component(mask: np.ndarray) -> np.ndarray:
+def _largest_component(mask: Any) -> Any:
     """Keep only the largest connected component for robust workpiece selection."""
 
-    n, labels, stats, _ = cv2.connectedComponentsWithStats(mask)
-    if n <= 1:
-        return mask
+    import cv2  # type: ignore
+    import numpy as np  # type: ignore
+
+    n_labels, labels, stats, _ = cv2.connectedComponentsWithStats(mask.astype(np.uint8))
+    if n_labels <= 1:
+        return mask.astype(np.uint8)
+
     idx = 1 + int(np.argmax(stats[1:, cv2.CC_STAT_AREA]))
     return (labels == idx).astype(np.uint8)
 
 
-def _close_and_fill(mask: np.ndarray, kernel_size: int = 7) -> np.ndarray:
+def _close_and_fill(mask: Any, kernel_size: int = 7) -> Any:
     """Apply morphology close to bridge gaps and fill small holes."""
+
+    import cv2  # type: ignore
+    import numpy as np  # type: ignore
 
     kernel = np.ones((kernel_size, kernel_size), np.uint8)
     return cv2.morphologyEx(mask.astype(np.uint8), cv2.MORPH_CLOSE, kernel)
 
 
-def _remove_small_components(mask: np.ndarray, min_area: int) -> np.ndarray:
+def _remove_small_components(mask: Any, min_area: int) -> Any:
     """Drop tiny noisy connected components under min_area pixels."""
 
-    n, labels, stats, _ = cv2.connectedComponentsWithStats(mask)
+    import cv2  # type: ignore
+    import numpy as np  # type: ignore
+
+    n_labels, labels, stats, _ = cv2.connectedComponentsWithStats(mask.astype(np.uint8))
     out = np.zeros_like(mask, dtype=np.uint8)
-    for idx in range(1, n):
+    for idx in range(1, n_labels):
         if int(stats[idx, cv2.CC_STAT_AREA]) >= int(min_area):
             out[labels == idx] = 1
     return out
 
 
 def process_yolo_masks(
-    masks: List[np.ndarray],
+    masks: List[Any],
     class_ids: List[int],
     confidences: List[float],
     class_map: Dict[int, str],
     image_size: Tuple[int, int],
     min_conf_by_class: Dict[str, float],
-    min_area_by_class: Dict[str, int] | None = None,
+    min_area_by_class: Optional[Dict[str, int]] = None,
 ) -> tuple[dict, Dict[str, float]]:
     """Apply confidence gating and class-specific aggregation rules."""
 
-    min_area_by_class = min_area_by_class or {"clamp": 25, "hand": 25, "tool": 25}
-    grouped_masks: Dict[str, List[np.ndarray]] = defaultdict(list)
+    import numpy as np  # type: ignore
+
+    min_area = {"clamp": 1, "hand": 1, "tool": 1}
+    if min_area_by_class:
+        min_area.update({key: int(value) for key, value in min_area_by_class.items()})
+
+    grouped_masks: Dict[str, List[Any]] = defaultdict(list)
     grouped_conf: Dict[str, List[float]] = defaultdict(list)
 
     for mask, class_id, conf in zip(masks, class_ids, confidences):
         cls_name = class_map.get(class_id)
         if cls_name is None:
             continue
-        min_conf = min_conf_by_class.get(cls_name, 0.0)
-        if conf < min_conf:
+        if float(conf) < float(min_conf_by_class.get(cls_name, 0.0)):
             continue
         grouped_masks[cls_name].append(mask)
         grouped_conf[cls_name].append(float(conf))
@@ -98,17 +116,20 @@ def process_yolo_masks(
 
     for cls_name in ("clamp", "hand", "tool"):
         class_masks = grouped_masks.get(cls_name, [])
-        if class_masks:
-            union = _union_masks(class_masks, image_size)
-            cleaned = _remove_small_components(union, min_area_by_class.get(cls_name, 25))
-            out_masks[cls_name] = cleaned if np.count_nonzero(cleaned) else None
-            out_conf[cls_name] = max(grouped_conf[cls_name])
+        if not class_masks:
+            continue
+        union = _union_masks(class_masks, image_size)
+        if union is None:
+            continue
+        cleaned = _remove_small_components(union, min_area.get(cls_name, 25))
+        out_masks[cls_name] = cleaned if int(np.count_nonzero(cleaned)) > 0 else None
+        out_conf[cls_name] = max(grouped_conf[cls_name])
 
-    clamp = out_masks.get("clamp")
-    hand = out_masks.get("hand")
+    clamp = out_masks["clamp"]
+    hand = out_masks["hand"]
     if clamp is not None or hand is not None:
-        c = clamp if clamp is not None else np.zeros(image_size, dtype=np.uint8)
-        h = hand if hand is not None else np.zeros(image_size, dtype=np.uint8)
-        out_masks["safety_mask"] = np.logical_or(c, h).astype(np.uint8)
+        clamp_mask = clamp if clamp is not None else np.zeros(image_size, dtype=np.uint8)
+        hand_mask = hand if hand is not None else np.zeros(image_size, dtype=np.uint8)
+        out_masks["safety_mask"] = np.logical_or(clamp_mask, hand_mask).astype(np.uint8)
 
     return out_masks, out_conf

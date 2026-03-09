@@ -6,11 +6,12 @@
   "yolo": {
     "model_path": "models/workpiece-seg.pt",
     "imgsz": 640,
+    "device": "cpu",
     "min_conf_by_class": {
       "workpiece": 0.55,
       "clamp": 0.45,
-      "hand": 0.6,
-      "tool": 0.5
+      "hand": 0.60,
+      "tool": 0.50
     },
     "min_area_by_class": {
       "clamp": 25,
